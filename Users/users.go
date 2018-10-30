@@ -1,4 +1,4 @@
-package main
+package users
 
 import(
 	"fmt"
@@ -7,6 +7,7 @@ import(
 	"net/http"
 	"log"
 	"time"
+	"os"
 	"encoding/json"
 	_ "github.com/go-sql-driver/mysql"
 )
@@ -83,6 +84,7 @@ func (a *App) StartPage(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *App) Add(w http.ResponseWriter, r *http.Request) {
+	LogMessage("Try to add user.")
 	check,res := a.UserParseForm(w,r)
 	if (!check){
 		return
@@ -107,6 +109,7 @@ func (a *App) Add(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *App) Get(w http.ResponseWriter, r *http.Request) {
+	LogMessage("Try to get user by login.")
 	check,res := a.UserParseForm(w,r)
 	if (!check){
 		return
@@ -130,6 +133,7 @@ func (a *App) Get(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *App) Update(w http.ResponseWriter, r *http.Request) {
+	LogMessage("Try to update user.")
 	check,res := a.UserParseForm(w,r)
 	if (!check){
 		return
@@ -153,6 +157,7 @@ func (a *App) Update(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *App) UserParseForm(w http.ResponseWriter,r *http.Request) (bool,UserInternal){
+	
 	var res UserInternal
 	err := r.ParseForm()
 	if CheckError(err){
@@ -164,6 +169,7 @@ func (a *App) UserParseForm(w http.ResponseWriter,r *http.Request) (bool,UserInt
 }
 
 func ParseUser(r *http.Request) UserExternal {
+	LogMessage("Try to parse user.")
 	var result UserExternal
 	result.Name = r.Form.Get("Name")
 	result.Login = r.Form.Get("Login")
@@ -180,6 +186,7 @@ func CreateResponseError(message string) []byte {
 }
 
 func SetUser(r UserExternal) UserInternal {
+	LogMessage("Try to set user.")
 	var result UserInternal
 	result.Name = r.Name
 	result.Login = r.Login
@@ -190,6 +197,7 @@ func SetUser(r UserExternal) UserInternal {
 
 func CheckError(err error) bool{
 	if err!=nil{
+		LogMessage("Error: "+err.Error())
 		return true
 	}else{
 		return false
@@ -197,6 +205,7 @@ func CheckError(err error) bool{
 }
 
 func CkeckForInsertInDB(Login string, db *sql.DB) bool{
+	LogMessage("Try to find user by login.")
 	query, err := db.Prepare(`
     			SELECT 
 					count(login)
@@ -223,6 +232,7 @@ func CkeckForInsertInDB(Login string, db *sql.DB) bool{
 }
 
 func InsertNewUserInDB(res UserInternal, db *sql.DB) Response{
+	LogMessage("Try to insert user into DB.")
 	var result Response
 	query, err := db.Prepare(`
     			INSERT INTO Users SET 
@@ -245,6 +255,7 @@ func InsertNewUserInDB(res UserInternal, db *sql.DB) Response{
 }
 
 func UpdateUserInDB(res UserInternal, db *sql.DB) Response {
+	LogMessage("Try to update user in DB.")
 	var result Response
 	stmt, ans := UpdateQuery(res)
 	query, err := db.Prepare(stmt)
@@ -271,6 +282,7 @@ func UpdateUserInDB(res UserInternal, db *sql.DB) Response {
 }
 
 func GetUserFromDB(Login string, db *sql.DB) Response {
+	LogMessage("Try to get user by login from DB.")
 	var result Response
 	var User UserInternal
 	query, err := db.Prepare(`
@@ -299,7 +311,7 @@ func GetUserFromDB(Login string, db *sql.DB) Response {
 
 func UpdateQuery(res UserInternal) (string,int){
 	if res.Name != ""{
-		if res.Description != ""{
+		if res.Description == ""{
 			return `UPDATE Users SET
 						Name = ?
 					WHERE Login = ?`,1
@@ -313,5 +325,28 @@ func UpdateQuery(res UserInternal) (string,int){
 		return `UPDATE Users SET
 					Description = ?
 				WHERE Login = ?`,3
+	}
+}
+
+func LogMessage(message string) {
+	file := "logs.txt"
+	current_time := time.Now().Local()
+	_, err := os.Stat(file)
+    if err != nil { 
+    	_, err := os.Create(file)
+    	if err != nil {
+			fmt.Println(("Error: "+err.Error()))
+		}
+    }
+    f, err := os.OpenFile(file, os.O_APPEND|os.O_WRONLY, 0600)
+    if err != nil {
+		fmt.Println(("Error: "+err.Error()))
+	}
+	defer f.Close()
+
+	_, err = f.WriteString("\n["+current_time.Format("Mon Jan 2 15:04:05 2006")+"] "+message)
+	CheckError(err)
+	if err != nil {
+		fmt.Println(("Error: "+err.Error()))
 	}
 }

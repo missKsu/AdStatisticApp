@@ -3,11 +3,14 @@ package main
 import(
 	"fmt"
 	"github.com/gorilla/mux"
-	"github.com/fatih/structs"
+	//"github.com/fatih/structs"
 	"net/http"
 	"log"
 	"encoding/json"
 	"net/url"
+	"os"
+	"strconv"
+	"time"
 	//"bytes"
 	"io/ioutil"
 )
@@ -29,6 +32,7 @@ type UserInternal struct {
 }
 
 type AdvertExternal struct {
+	AdvertId int
 	Type string
 	Text string
 	Title string
@@ -38,14 +42,17 @@ type AdvertExternal struct {
 }
 
 type AdvertInternal struct {
+	AdvertId int `json:"AdvertId"`
 	Type string `json:"Type"`
 	Text string `json:"Text"`
 	Title string `json:"Title"`
 	Href string `json:"Href"`
 	//AdGroupId int `json:"AdGroupId"`
+	CampaignId int `json:"CampaignId"`
 }
 
 type CampaignExternal struct {
+	CampaignId int
 	Login string
 	Email string
 	Name string
@@ -55,7 +62,8 @@ type CampaignExternal struct {
 }
 
 type CampaignInternal struct {
-	ClientId int `json:"ClientId"`
+	Login string `json:"Login"`
+	CampaignId int `json:"CampaignId,string,omitempty"`
 	Email string `json:"Email"`
 	Name string `json:"Name"`
 	Type string `json:"Type"`
@@ -80,6 +88,8 @@ func (a *App) InitializeRoutes() {
 	a.Router.HandleFunc("/users/{*}",a.Users).Methods("POST")
 	a.Router.HandleFunc("/adverts/{*}",a.Adverts).Methods("POST")
 	a.Router.HandleFunc("/campaigns/{*}",a.Campaigns).Methods("POST")
+	a.Router.HandleFunc("/updateInfoAboutUserForCampaigns",a.UpdateInfoAboutUserForCampaigns).Methods("POST")
+	a.Router.HandleFunc("/updateType",a.UpdateType).Methods("POST")
 }
 
 func (a *App) Run(addr string) {
@@ -88,9 +98,11 @@ func (a *App) Run(addr string) {
 
 func (a *App) Welcome(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprint(w, "Start AdStatisticsApp!")
+	LogMessage("Request for info.")
 }
 
 func (a *App) Users(w http.ResponseWriter, r *http.Request) {
+	LogMessage("Request for users' service.")
 	add:= "http://localhost:3001"+r.URL.String()
 	fmt.Println(add)
 	err := r.ParseForm()
@@ -99,8 +111,9 @@ func (a *App) Users(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	res := SetUser(ParseUser(r))
-
-	response := SendAPIQuery(add,res)
+	val, err := json.Marshal(res)
+	CheckError(err)
+	response := SendAPIQuery(add,val)
 	fmt.Fprint(w, string(response),"\n")
 }
 
@@ -121,6 +134,7 @@ func SetUser(r UserExternal) UserInternal {
 }
 
 func (a *App) Adverts(w http.ResponseWriter, r *http.Request) {
+	LogMessage("Request for adverts' service.")
 	add:= "http://localhost:3002"+r.URL.String()
 	err := r.ParseForm()
 	CheckError(err)
@@ -132,35 +146,74 @@ func (a *App) Adverts(w http.ResponseWriter, r *http.Request) {
 }
 
 func ParseAdvert(r *http.Request) AdvertExternal {
+	LogMessage("Try to parse advert request.")
 	var result AdvertExternal
+	var id int
+	var err error
+	if r.Form.Get("AdvertId") != ""{
+		id,err = strconv.Atoi(r.Form.Get("AdvertId"))
+		CheckError(err)
+	}else{
+		id = 0
+	}
+	result.AdvertId = id
 	result.Type = r.Form.Get("Type")
 	result.Text = r.Form.Get("Text")
 	result.Title = r.Form.Get("Title")
+	result.Href = r.Form.Get("Href")
 	result.CampaignName = r.Form.Get("CampaignName")
 	return result
 }
 
 func SetAdvert(r AdvertExternal) AdvertInternal {
+	LogMessage("Try to set internal advert request.")
 	var result AdvertInternal
+	result.AdvertId = r.AdvertId
 	result.Type = r.Type
 	result.Text = r.Text
 	result.Title = r.Title
+	result.Href = r.Href
+	result.CampaignId = GetCampaignIdByName(r.CampaignName)
 	return result
 }
 
+func GetCampaignIdByName(CampaignName string) int{
+	LogMessage("Try to get campaign id by name.")
+	add:= "http://localhost:3002/campaigns/getCampaignIdByName"
+	var que CampaignInternal
+	que.Name = CampaignName
+	val, err := json.Marshal(que)
+	LogMessage(string(val))
+	CheckError(err)
+	response := SendAPIQuery(add,val)
+	err = json.Unmarshal(response, &que)
+	return que.CampaignId
+}
+
 func (a *App) Campaigns(w http.ResponseWriter, r *http.Request) {
-	add:= "http://localhost:3003"+r.URL.String()
+	LogMessage("Request for campaigns' service.")
+	add:= "http://localhost:3002"+r.URL.String()
 	err := r.ParseForm()
 	CheckError(err)
 	res := SetCampaign(ParseCampaign(r))
 	val, err := json.Marshal(res)
 	CheckError(err)
+	fmt.Println(string(val))
 	response := SendAPIQuery(add,val)
 	fmt.Fprint(w, string(response),"\n")
 }
 
 func ParseCampaign(r *http.Request) CampaignExternal {
 	var result CampaignExternal
+	var id int
+	var err error
+	if r.Form.Get("CampaignId") != ""{
+		id,err = strconv.Atoi(r.Form.Get("CampaignId"))
+		CheckError(err)
+	}else{
+		id = 0
+	}
+	result.CampaignId = id
 	result.Login = r.Form.Get("Login")
 	result.Email = r.Form.Get("Email")
 	result.Name = r.Form.Get("Name")
@@ -172,6 +225,8 @@ func ParseCampaign(r *http.Request) CampaignExternal {
 
 func SetCampaign(r CampaignExternal) CampaignInternal {
 	var result CampaignInternal
+	result.CampaignId = r.CampaignId
+	result.Login = r.Login
 	result.Email = r.Email
 	result.Name = r.Name
 	result.Type = r.Type
@@ -182,22 +237,61 @@ func SetCampaign(r CampaignExternal) CampaignInternal {
 
 func CheckError(err error) bool{
 	if err!=nil{
+		LogMessage("Error: "+err.Error()+".")
 		return true
 	}else{
 		return false
 	}
 }
 
-func SendAPIQuery(add string, body interface{}) []byte{
+func SendAPIQuery(add string, body []byte) []byte{
+	LogMessage("Send api query to "+add+".")
 	var response *http.Response
 	v := url.Values{}
-	for key,value := range structs.Map(body) {
-		v.Add(key,value.(string))
+	bodyArray := make(map[string]string)
+	err := json.Unmarshal(body,&bodyArray)
+	CheckError(err)
+	for key,value := range bodyArray {
+		if value != ""{
+			v.Add(key,value)
+		}
+		
 	}
-	response, err := http.PostForm(add,v)
+	response, err = http.PostForm(add,v)
 	CheckError(err)
 	defer response.Body.Close()
 	result,err:= ioutil.ReadAll(response.Body)
 	CheckError(err)
 	return result
+}
+
+func (a *App) UpdateInfoAboutUserForCampaigns(w http.ResponseWriter, r *http.Request) {
+
+}
+
+func (a *App) UpdateType(w http.ResponseWriter, r *http.Request) {
+
+}
+
+func LogMessage(message string) {
+	file := "logs.txt"
+	current_time := time.Now().Local()
+	_, err := os.Stat(file)
+    if err != nil { 
+    	_, err := os.Create(file)
+    	if err != nil {
+			fmt.Println(("Error: "+err.Error()))
+		}
+    }
+    f, err := os.OpenFile(file, os.O_APPEND|os.O_WRONLY, 0600)
+    if err != nil {
+		fmt.Println(("Error: "+err.Error()))
+	}
+	defer f.Close()
+
+	_, err = f.WriteString("\n["+current_time.Format("Mon Jan 2 15:04:05 2006")+"] "+message)
+	CheckError(err)
+	if err != nil {
+		fmt.Println(("Error: "+err.Error()))
+	}
 }
